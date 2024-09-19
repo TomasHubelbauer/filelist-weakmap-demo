@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FileList WeakMap Demo</title>
+    <script type="module">
+      const CHUNKS = 10;
+
+      /** @type {HTMLInputElement} */
+      const input = document.querySelector('input[type="file"]');
+
+      const div = document.querySelector('div');
+
+      // Note that this is our UI state (stand-in for React's `useState`)
+      /** @type {{ file: File; abortController: AbortController; progress: 0; }[]} */
+      const uploads = [];
+
+      input.addEventListener('change', async () => {
+        /** @type {WeakMap<File, AbortController>} */
+        const abortControllers = new WeakMap();
+
+        const fileList = input.files;
+        for (const file of fileList) {
+          const abortController = new AbortController();
+          abortControllers.set(file, abortController);
+          uploads.push({ file, abortController, progress: 0 });
+        }
+
+        input.value = '';
+        render();
+        await uploadFilesForOf(fileList, abortControllers);
+      });
+
+      // Will stop at the first file that is aborted and not continue to other
+      // non-aborted files (or so I thought)
+      async function uploadFilesForOf(
+        /** @type {FileList} */
+        fileList,
+
+        /** @type {WeakMap<File, AbortController>} */
+        abortControllers
+      ) {
+        for (const file of fileList) {
+          await uploadFile(file, abortControllers.get(file));
+        }
+      }
+
+      // Will upload all files skipping aborted files seamlessly
+      async function uploadFilesFor(
+        /** @type {FileList} */
+        fileList,
+
+        /** @type {WeakMap<File, AbortController>} */
+        abortControllers
+      ) {
+        for (let index = 0; index < fileList.length; index++) {
+          const file = fileList[index];
+          await uploadFile(file, abortControllers.get(file));
+        }
+      }
+
+      async function uploadFile(
+        /** @type {File} */
+        file,
+
+        /** @type {AbortController} */
+        abortController,
+      ) {
+        for (let index = 0; index < CHUNKS; index++) {
+          const upload = uploads.find((upload) => upload.file === file);
+          if (abortController.signal.aborted) {
+            render();
+            return;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          upload.progress = ~~(((index + 1) / CHUNKS) * 100);
+          render();
+        }
+      }
+
+      function render() {
+        div.replaceChildren();
+
+        for (const { file, progress } of uploads) {
+          const uploadDiv = document.createElement('div');
+          uploadDiv.textContent = `${file.name} - ${progress}%`;
+
+          const button = document.createElement('button');
+          button.textContent = 'Cancel';
+          button.addEventListener('click', () => {
+            const index = uploads.findIndex((upload) => upload.file === file);
+            const upload = uploads[index];
+            upload.abortController.abort();
+            uploads.splice(index, 1);
+            render();
+          });
+
+          uploadDiv.append(button);
+          div.append(uploadDiv);
+        }
+      }
+
+    </script>
+  </head>
+  <body>
+    <input type="file" multiple />
+    <div></div>
+  </body>
+</html>
